@@ -11,9 +11,9 @@ import (
 )
 
 func main() {
-	//we will run on :9998
+	// we will run on :9998
 	port := "9998"
-	//which gives us the issuer: http://localhost:9998/
+	// which gives us the issuer: http://localhost:9998/
 	issuer := fmt.Sprintf("http://localhost:%s/", port)
 
 	// the OpenIDProvider interface needs a Storage interface handling various checks and state manipulations
