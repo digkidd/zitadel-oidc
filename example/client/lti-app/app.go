@@ -25,7 +25,7 @@ var (
 	key          = []byte("test1234test1234")
 )
 
-func main() {
+func main3() {
 	clientID := os.Getenv("CLIENT_ID")
 	clientSecret := os.Getenv("CLIENT_SECRET")
 	keyPath := os.Getenv("KEY_PATH")
@@ -77,6 +77,8 @@ func main() {
 		return uuid.New().String()
 	}
 
+	myState := state()
+
 	// register the AuthURLHandler at your preferred path.
 	// the AuthURLHandler creates the auth request and redirects the user to the auth server.
 	// including state handling with secure cookie and the possibility to use PKCE.
@@ -90,34 +92,60 @@ func main() {
 	// https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest
 	// comparing with OIDC: https://openid.net/specs/openid-connect-core-1_0.html#ImplicitAuthRequest
 
-	http.Handle("/login",
-		rp.AuthURLHandler(
-			state,
-			provider,
-			rp.WithPromptURLParam("Welcome back!"),
-			rp.WithURLParam("login_hint", "a_hint!"),
-		))
+	// http.Handle("/ltiLogin",
+	// 	rp.AuthURLHandler(
+	// 		state,
+	// 		provider,
+	// 		rp.WithPromptURLParam("Welcome back!"),
+	// 		rp.WithURLParam("login_hint", "a_hint!"),
+	// 		rp.WithURLParam("response_type", "id_token"),
+	// 	))
+
+	http.HandleFunc("/ltiLogin", func(w http.ResponseWriter, r *http.Request) {
+		loginHint := r.FormValue("login_hint")
+		ltiMessageHint := r.FormValue("lti_message_hint")
+		ltiDeploymentID := r.FormValue("lti_deployment_id")
+		// some kind of deployment id check... --> DB
+		iss := r.FormValue("iss")
+		if iss != "Platform" {
+			fmt.Println("Incorrect issuer")
+			return
+		}
+		targetLinkUri := r.FormValue("target_link_uri")
+		clientID := r.FormValue("client_id")
+		// platform2 server auth endpoint - get from registration table?:
+		redirURL := "http://localhost:9090/authlogin?" +
+			"client_id=" + clientID + "&target_link_uri=" + targetLinkUri +
+			"&login_hint=" + loginHint + "&response_type=id_token" +
+			"&state=" + myState + "&redirect_uri=http://localhost:8881/ltiLaunch" +
+			"&lti_message_hint=" + ltiMessageHint + "&lti_deployment_id=" + ltiDeploymentID
+
+		// fmt.Fprintf(w, "Redirecting to LMS authorization endpoint...")
+		fmt.Println("URL redirect - to the Plat side: " + redirURL)
+		http.Redirect(w, r, redirURL, http.StatusFound)
+	})
 
 	// for demonstration purposes the returned userinfo response is written as JSON object onto response
-	marshalUserinfo := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *oidc.UserInfo) {
-		data, err := json.Marshal(info)
+	// marshalUserinfo := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty, info *oidc.UserInfo) {
+	// 	data, err := json.Marshal(info)
+	// 	if err != nil {
+	// 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 		return
+	// 	}
+	// 	w.Write(data)
+	// }
+
+	// you could also just take the access_token and id_token without calling the userinfo endpoint:
+	//
+	// marshalToken := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens, state string, rp rp.RelyingParty) {
+	marshalToken := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[*oidc.IDTokenClaims], state string, rp rp.RelyingParty) {
+		data, err := json.Marshal(tokens)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Write(data)
 	}
-
-	// you could also just take the access_token and id_token without calling the userinfo endpoint:
-	//
-	// marshalToken := func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens, state string, rp rp.RelyingParty) {
-	//	data, err := json.Marshal(tokens)
-	//	if err != nil {
-	//		http.Error(w, err.Error(), http.StatusInternalServerError)
-	//		return
-	//	}
-	//	w.Write(data)
-	//}
 
 	// you can also try token exchange flow
 	//
@@ -149,11 +177,12 @@ func main() {
 	// with the returned tokens from the token endpoint
 	// in this example the callback function itself is wrapped by the UserinfoCallback which
 	// will call the Userinfo endpoint, check the sub and pass the info into the callback function
-	http.Handle(callbackPath, rp.CodeExchangeHandler(rp.UserinfoCallback(marshalUserinfo), provider))
+	// http.Handle(callbackPath, rp.CodeExchangeHandler(rp.UserinfoCallback(marshalUserinfo), provider))
 
 	// if you would use the callback without calling the userinfo endpoint, simply switch the callback handler for:
 	//
-	// http.Handle(callbackPath, rp.CodeExchangeHandler(marshalToken, provider))
+	// Does this just handle a returned id_token???:
+	http.Handle(callbackPath, rp.CodeExchangeHandler(marshalToken, provider))
 
 	// simple counter for request IDs
 	var counter atomic.Int64
